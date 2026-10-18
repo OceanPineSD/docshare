@@ -9,6 +9,10 @@ const count = document.getElementById("count");
 const prev = document.getElementById("prev");
 const next = document.getElementById("next");
 const viewId = stage.dataset.view;
+const mark = stage.dataset.mark;
+const protect = stage.dataset.protect === "1";
+const shield = document.getElementById("shield");
+const shieldText = document.getElementById("shield-text");
 
 let pdf = null;
 let current = 1;
@@ -63,9 +67,37 @@ async function render(n) {
     const ctx = canvas.getContext("2d");
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     await page.render({ canvasContext: ctx, viewport }).promise;
+    if (mark) drawWatermark(ctx, viewport.width, viewport.height);
   })();
   await rendering;
   rendering = null;
+}
+
+// Tiled diagonal text with the viewer's email and the time, drawn into the page
+// pixels so any screenshot or photo carries it.
+function drawWatermark(ctx, w, h) {
+  const size = Math.max(11, Math.round(Math.min(w, h) / 38));
+  ctx.save();
+  ctx.font = `600 ${size}px "Schibsted Grotesk", system-ui, sans-serif`;
+  ctx.fillStyle = "rgba(19, 33, 46, 0.11)";
+  ctx.textBaseline = "middle";
+  const stepX = ctx.measureText(mark).width + size * 4;
+  const stepY = size * 7;
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-Math.PI / 7);
+  const reach = Math.hypot(w, h);
+  for (let y = -reach; y < reach; y += stepY) {
+    const offset = (Math.round(y / stepY) % 2) * (stepX / 2);
+    for (let x = -reach; x < reach; x += stepX) ctx.fillText(mark, x + offset, y);
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.font = `600 ${Math.max(10, size - 2)}px "Schibsted Grotesk", system-ui, sans-serif`;
+  ctx.fillStyle = "rgba(19, 33, 46, 0.45)";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "bottom";
+  ctx.fillText(mark, w - size, h - size * 0.8);
+  ctx.restore();
 }
 
 function updatePager() {
@@ -93,6 +125,59 @@ document.addEventListener("keydown", (e) => {
     go(current - 1);
   }
 });
+
+// ---------- screenshot deterrence ----------
+// Browsers cannot block screenshots. This hides the page when a capture shortcut
+// starts or the window loses focus, and turns off right-click, drag and print.
+
+let shieldTimer;
+function showShield(text, ms) {
+  shieldText.textContent = text;
+  shield.hidden = false;
+  document.body.classList.add("shielded");
+  clearTimeout(shieldTimer);
+  if (ms) shieldTimer = setTimeout(hideShield, ms);
+}
+function hideShield() {
+  if (protect && !document.hasFocus()) return;
+  shield.hidden = true;
+  document.body.classList.remove("shielded");
+}
+
+if (protect) {
+  const capture = "Screenshots are turned off for this document.";
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+  document.addEventListener("dragstart", (e) => e.preventDefault());
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      const k = e.key.toLowerCase();
+      const macCapture = e.metaKey && e.shiftKey; // Cmd+Shift+3/4/5 start with this
+      const winSnip = (e.metaKey || e.getModifierState("OS")) && e.shiftKey && k === "s";
+      const printOrSave = (e.metaKey || e.ctrlKey) && (k === "p" || k === "s");
+      if (k === "printscreen" || macCapture || winSnip || printOrSave) {
+        e.preventDefault();
+        showShield(printOrSave ? "Printing and saving are turned off for this document." : capture);
+      }
+    },
+    true,
+  );
+  document.addEventListener(
+    "keyup",
+    (e) => {
+      if (e.key === "PrintScreen") {
+        showShield(capture, 2500);
+        navigator.clipboard?.writeText("").catch(() => {});
+      } else if (!shield.hidden && (e.key === "Meta" || e.key === "Shift" || e.key === "Control")) {
+        setTimeout(hideShield, 1200);
+      }
+    },
+    true,
+  );
+  window.addEventListener("blur", () => showShield("Return to this window to keep reading."));
+  window.addEventListener("focus", () => setTimeout(hideShield, 150));
+  window.addEventListener("beforeprint", () => showShield("Printing is turned off for this document."));
+}
 
 // Swipe on touch screens.
 let touchX = null;

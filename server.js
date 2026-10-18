@@ -7,12 +7,16 @@ import express from "express";
 import multer from "multer";
 
 import { getOrCreateSetting, migrate, q } from "./db.js";
+import * as g from "./guard.js";
 import * as v from "./views.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const HOME_URL = process.env.HOME_URL || "https://tung.digital";
+// When set (e.g. docs.tung.digital), every other host redirects here and share links use it.
+const CANONICAL_HOST = (process.env.CANONICAL_HOST || "").trim().toLowerCase();
+const OWNER = process.env.OWNER_NAME || "Tung Nguyen";
 const MAX_UPLOAD_MB = 50;
 
 await migrate();
@@ -30,6 +34,12 @@ if (!ADMIN_PASSWORD) {
 const app = express();
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
+// "/" stays reachable on every host because Replit health checks use it.
+app.use((req, res, next) => {
+  if (!CANONICAL_HOST || req.path === "/" || req.hostname === CANONICAL_HOST) return next();
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  res.redirect(301, `https://${CANONICAL_HOST}${req.originalUrl}`);
+});
 app.use(cookieParser(SESSION_SECRET));
 app.use(express.urlencoded({ extended: false }));
 app.use("/static", express.static(path.join(__dirname, "public"), { maxAge: "1h" }));
@@ -170,7 +180,7 @@ app.get(
         [doc.id],
       )
     ).rows;
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const baseUrl = CANONICAL_HOST ? `https://${CANONICAL_HOST}` : `${req.protocol}://${req.get("host")}`;
     res.send(v.documentPage({ doc, links, views, pages, baseUrl }));
   }),
 );
@@ -179,18 +189,25 @@ app.post(
   "/admin/documents/:id/links",
   requireAdmin,
   wrap(async (req, res) => {
-    const { label, require_email, allow_download, expires_on } = req.body;
-    const expiresAt = expires_on ? new Date(`${expires_on}T23:59:59Z`) : null;
+    const b = req.body;
+    const expiresAt = b.expires_on ? new Date(`${b.expires_on}T23:59:59Z`) : null;
+    const allowed = g.parseAllowList(b.allowed_emails).join(", ").slice(0, 2000);
     await q(
-      `insert into links (id, document_id, label, require_email, allow_download, expires_at)
-       values ($1, $2, $3, $4, $5, $6)`,
+      `insert into links (id, document_id, label, require_email, allow_download, expires_at,
+         allowed_emails, verify_email, lock_email, watermark, screen_protect)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         newId(6),
         req.params.id,
-        (label || "").trim().slice(0, 120) || "Untitled link",
-        require_email === "on",
-        allow_download === "on",
+        (b.label || "").trim().slice(0, 120) || "Untitled link",
+        b.require_email === "on",
+        b.allow_download === "on",
         expiresAt && !Number.isNaN(expiresAt.getTime()) ? expiresAt : null,
+        allowed,
+        b.verify_email === "on",
+        b.lock_email === "on",
+        b.watermark === "on",
+        b.screen_protect === "on",
       ],
     );
     res.redirect(`/admin/documents/${req.params.id}`);
@@ -203,6 +220,18 @@ app.post(
   wrap(async (req, res) => {
     const { rows } = await q(
       "update links set disabled = not disabled where id = $1 returning document_id",
+      [req.params.id],
+    );
+    res.redirect(rows[0] ? `/admin/documents/${rows[0].document_id}` : "/admin");
+  }),
+);
+
+app.post(
+  "/admin/links/:id/unlock",
+  requireAdmin,
+  wrap(async (req, res) => {
+    const { rows } = await q(
+      "update links set locked_email = null where id = $1 returning document_id",
       [req.params.id],
     );
     res.redirect(rows[0] ? `/admin/documents/${rows[0].document_id}` : "/admin");
@@ -243,46 +272,150 @@ async function getLiveLink(slug) {
 }
 
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) && s.length <= 254;
+const MIN = 60_000;
+const lockedMsg = `This link is reserved for someone else. Ask ${OWNER} for your own link.`;
+const notAllowedMsg = "This email doesn't have access. Use the address this link was sent to.";
+
+// Bots and scripted clients never see documents.
+function blockBots(req, res, next) {
+  if (g.isBot(req.get("user-agent"))) return res.status(404).send(v.notFound());
+  next();
+}
+
+async function grant(res, link, email) {
+  if (link.lock_email) {
+    await q("update links set locked_email = $2 where id = $1 and locked_email is null", [link.id, email]);
+    const { rows } = await q("select locked_email from links where id = $1", [link.id]);
+    if (rows[0].locked_email !== email) return res.status(403).send(v.gate(link, lockedMsg));
+  }
+  res.cookie(`e_${link.id}`, email, { ...cookieOpts, maxAge: 90 * 24 * 3600 * 1000 });
+  res.redirect(`/d/${link.id}`);
+}
 
 app.get(
   "/d/:slug",
+  blockBots,
   wrap(async (req, res) => {
     const link = await getLiveLink(req.params.slug);
     if (!link) return res.status(404).send(v.notFound());
-    const email = req.signedCookies[`e_${link.id}`];
-    if (link.require_email && !email) return res.send(v.gate(link));
+    let email = null;
+    if (link.require_email) {
+      email = req.signedCookies[`e_${link.id}`] || null;
+      // A saved email still has to pass the current lock and allow list.
+      const access = email ? g.accessFor(link, email) : null;
+      if (access === "locked") return res.send(v.gate(link, lockedMsg));
+      if (access === "not_allowed") return res.send(v.gate(link, notAllowedMsg));
+      if (!email) return res.send(v.gate(link));
+      if (link.lock_email && !link.locked_email) {
+        await q("update links set locked_email = $2 where id = $1 and locked_email is null", [link.id, email]);
+      }
+    }
     const viewId = newId(12);
     await q("insert into views (id, link_id, email, user_agent) values ($1, $2, $3, $4)", [
       viewId,
       link.id,
-      email || null,
+      email,
       (req.get("user-agent") || "").slice(0, 300),
     ]);
     res.set("Cache-Control", "no-store");
-    res.send(v.viewer(link, viewId));
+    res.send(v.viewer(link, viewId, email));
   }),
 );
 
 app.post(
   "/d/:slug",
+  blockBots,
+  wrap(async (req, res) => {
+    const link = await getLiveLink(req.params.slug);
+    if (!link) return res.status(404).send(v.notFound());
+    if (g.limited(`gate:${req.ip}`, 20, 10 * MIN)) {
+      return res.status(429).send(v.gate(link, "Too many attempts. Wait 10 minutes and try again."));
+    }
+    const email = String(req.body.email || "").trim().toLowerCase();
+    if (!isEmail(email)) return res.status(400).send(v.gate(link, "Enter a valid email address."));
+
+    const access = g.accessFor(link, email);
+    if (access === "locked") return res.status(403).send(v.gate(link, lockedMsg));
+    if (access === "not_allowed") return res.status(403).send(v.gate(link, notAllowedMsg));
+    if (access === "ok") return grant(res, link, email);
+
+    // access === "code"
+    if (
+      g.limited(`send:${link.id}:${email}`, 3, 15 * MIN) ||
+      g.limited(`send-ip:${req.ip}`, 10, 60 * MIN)
+    ) {
+      return res.status(429).send(v.codeForm(link, email, "We already sent a code. Check your inbox, or wait 15 minutes."));
+    }
+    const code = g.newCode();
+    await q(
+      `insert into email_codes (link_id, email, code_hash, expires_at)
+       values ($1, $2, $3, now() + interval '10 minutes')
+       on conflict (link_id, email) do update
+       set code_hash = excluded.code_hash, expires_at = excluded.expires_at, attempts = 0, created_at = now()`,
+      [link.id, email, g.hashCode(SESSION_SECRET, link.id, email, code)],
+    );
+    try {
+      await g.sendCodeEmail({ to: email, code, title: link.title, owner: OWNER });
+    } catch (err) {
+      console.error("code email failed:", err.message);
+      return res.status(502).send(v.gate(link, "We couldn't send a code right now. Try again in a minute."));
+    }
+    res.send(v.codeForm(link, email));
+  }),
+);
+
+app.post(
+  "/d/:slug/verify",
+  blockBots,
   wrap(async (req, res) => {
     const link = await getLiveLink(req.params.slug);
     if (!link) return res.status(404).send(v.notFound());
     const email = String(req.body.email || "").trim().toLowerCase();
-    if (!isEmail(email)) return res.status(400).send(v.gate(link, "Enter a valid email address."));
-    res.cookie(`e_${link.id}`, email, { ...cookieOpts, maxAge: 90 * 24 * 3600 * 1000 });
-    res.redirect(`/d/${link.id}`);
+    const code = String(req.body.code || "").replace(/\D/g, "");
+    if (!isEmail(email)) return res.status(400).send(v.gate(link));
+    if (g.limited(`verify:${req.ip}`, 30, 10 * MIN)) {
+      return res.status(429).send(v.codeForm(link, email, "Too many attempts. Wait 10 minutes and try again."));
+    }
+    const row = (
+      await q(
+        "select code_hash, attempts, expires_at > now() as live from email_codes where link_id = $1 and email = $2",
+        [link.id, email],
+      )
+    ).rows[0];
+    if (!row || !row.live || row.attempts >= 5) {
+      await q("delete from email_codes where link_id = $1 and email = $2", [link.id, email]);
+      return res.status(400).send(v.gate(link, "That code expired. Enter your email to get a new one."));
+    }
+    if (!g.sameHash(row.code_hash, g.hashCode(SESSION_SECRET, link.id, email, code))) {
+      await q("update email_codes set attempts = attempts + 1 where link_id = $1 and email = $2", [link.id, email]);
+      return res.status(400).send(v.codeForm(link, email, "That code is wrong. Check the email and try again."));
+    }
+    await q("delete from email_codes where link_id = $1 and email = $2", [link.id, email]);
+    const fresh = await getLiveLink(link.id);
+    if (g.accessFor(fresh, email) === "locked") return res.status(403).send(v.gate(link, lockedMsg));
+    return grant(res, fresh, email);
   }),
 );
 
 app.get(
   "/d/:slug/file",
+  blockBots,
   wrap(async (req, res) => {
+    if (g.limited(`file:${req.ip}`, 30, MIN)) return res.status(429).end();
     const link = await getLiveLink(req.params.slug);
     if (!link) return res.status(404).end();
-    const view = (await q("select id from views where id = $1 and link_id = $2", [req.query.v, link.id])).rows[0];
+    const view = (
+      await q(
+        "select id from views where id = $1 and link_id = $2 and started_at > now() - interval '12 hours'",
+        [req.query.v, link.id],
+      )
+    ).rows[0];
     if (!view) return res.status(403).end();
     const download = req.query.dl === "1" && link.allow_download;
+    // Without download rights, the file only goes to the viewer script, not to a browser tab.
+    if (!download && !link.allow_download && req.get("sec-fetch-dest") === "document") {
+      return res.status(403).send(v.notFound());
+    }
     const { rows } = await q(
       "select f.data, d.filename from document_files f join documents d on d.id = f.document_id where f.document_id = $1",
       [link.document_id],
@@ -303,6 +436,7 @@ app.post(
   "/t/:viewId",
   express.json({ type: () => true, limit: "2kb" }),
   wrap(async (req, res) => {
+    if (g.limited(`beacon:${req.ip}`, 240, MIN)) return res.status(204).end();
     const page = Number.parseInt(req.body?.page, 10);
     const ms = Math.min(Math.max(Number.parseInt(req.body?.ms, 10) || 0, 0), 60_000);
     const pages = Number.parseInt(req.body?.pages, 10);

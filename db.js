@@ -62,6 +62,23 @@ create table if not exists settings (
   value text not null
 );
 
+alter table links add column if not exists watermark boolean not null default true;
+alter table links add column if not exists screen_protect boolean not null default true;
+alter table links add column if not exists allowed_emails text not null default '';
+alter table links add column if not exists verify_email boolean not null default true;
+alter table links add column if not exists lock_email boolean not null default true;
+alter table links add column if not exists locked_email text;
+
+create table if not exists email_codes (
+  link_id text not null references links(id) on delete cascade,
+  email text not null,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  attempts integer not null default 0,
+  created_at timestamptz not null default now(),
+  primary key (link_id, email)
+);
+
 create index if not exists links_document_idx on links(document_id);
 create index if not exists views_link_idx on views(link_id);
 `;

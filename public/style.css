@@ -75,6 +75,12 @@ body.viewer { background: var(--desk); color: var(--paper); height: 100vh; heigh
 .stage { position: relative; display: grid; place-items: center; overflow: hidden; outline: none; }
 .stage canvas { background: var(--white); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 18px 48px rgba(0, 0, 0, 0.35); }
 .stage-status { position: absolute; color: #9fb0ba; }
+.shield { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(28, 42, 54, 0.92); z-index: 2; }
+.shield[hidden] { display: none; }
+.shield p { max-width: 32ch; text-align: center; font-weight: 600; font-size: 1.125rem; color: var(--paper); }
+body.shielded .stage canvas { filter: blur(28px); }
+body.protect { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+@media print { body.protect * { display: none !important; } }
 .pager { display: flex; justify-content: center; align-items: center; gap: 1.25rem; padding: 10px 16px 16px; }
 .pager button { background: transparent; color: var(--paper); border: 1px solid #3a4b59; }
 #count { font-variant-numeric: tabular-nums; min-width: 6ch; text-align: center; color: #c5d0d6; }
@@ -94,7 +100,13 @@ h2 { font-size: 1.125rem; margin: 2.5rem 0 0.75rem; }
 .upload-form label, .link-form label { display: grid; gap: 0.25rem; font-size: 0.875rem; font-weight: 500; }
 .upload-form input[name="title"] { width: 280px; }
 .link-form .grow { flex: 1 1 240px; }
-.link-form .check { display: flex; align-items: center; gap: 0.4rem; padding-bottom: 0.55rem; }
+.link-form .check { display: flex; align-items: center; gap: 0.4rem; font-weight: 400; }
+.link-form .full { flex: 1 1 100%; }
+.link-form .full input { width: 100%; }
+.link-form .checks { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; border: 0; margin: 0; padding: 0; }
+.small-text { font-size: 0.8125rem; line-height: 1.4; }
+.data .actions { white-space: nowrap; }
+.data .actions form { display: inline; margin-right: 0.75rem; }
 
 table.data { width: 100%; border-collapse: collapse; background: var(--white); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 .data th, .data td { text-align: left; padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
