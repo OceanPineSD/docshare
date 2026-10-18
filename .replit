@@ -1,0 +1,11 @@
+modules = ["nodejs-20", "postgresql-16"]
+run = "npm run dev"
+
+[deployment]
+deploymentTarget = "autoscale"
+build = ["npm", "ci"]
+run = ["node", "server.js"]
+
+[[ports]]
+localPort = 3000
+externalPort = 80
