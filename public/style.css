@@ -56,6 +56,7 @@ body.gate { background: var(--ink); color: var(--paper); min-height: 100vh; disp
   text-wrap: balance;
 }
 .gate-copy { color: #c5d0d6; max-width: 46ch; }
+.gate-copy a.on-dark { color: var(--paper); }
 .gate-form { display: grid; gap: 0.6rem; max-width: 380px; }
 .gate-form label { font-weight: 500; }
 .gate-form input { border-color: #3a4b59; background: #0e1922; color: var(--paper); padding: 0.75rem; }

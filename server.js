@@ -329,9 +329,11 @@ app.post(
   }),
 );
 
-app.get("/", (req, res) =>
-  res.redirect(req.signedCookies.admin === "1" ? "/admin" : HOME_URL),
-);
+// Replit health checks hit "/" and need a fast 200, so this page never redirects.
+app.get("/", (req, res) => {
+  if (req.signedCookies.admin === "1") return res.redirect("/admin");
+  res.send(v.home(HOME_URL));
+});
 
 app.use((req, res) => res.status(404).send(v.notFound()));
 

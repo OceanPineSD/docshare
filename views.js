@@ -247,6 +247,18 @@ export function viewer(link, viewId) {
   });
 }
 
+export function home(homeUrl) {
+  return layout({
+    title: "Docs",
+    mode: "gate",
+    body: `<main class="gate-main">
+  <p class="gate-from">${esc(OWNER)}</p>
+  <h1 class="gate-title">Documents are shared by private link</h1>
+  <p class="gate-copy">If you were sent a link, open it directly. Otherwise, visit <a class="on-dark" href="${esc(homeUrl)}">${esc(homeUrl.replace(/^https?:\/\//, ""))}</a>.</p>
+</main>`,
+  });
+}
+
 export function notFound() {
   return layout({
     title: "Link not available",
