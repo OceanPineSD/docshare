@@ -6,18 +6,25 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import multer from "multer";
 
-import { migrate, q } from "./db.js";
+import { getOrCreateSetting, migrate, q } from "./db.js";
 import * as v from "./views.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const SESSION_SECRET = process.env.SESSION_SECRET;
 const HOME_URL = process.env.HOME_URL || "https://tung.digital";
 const MAX_UPLOAD_MB = 50;
 
-if (!ADMIN_PASSWORD || !SESSION_SECRET) {
-  throw new Error("Set ADMIN_PASSWORD and SESSION_SECRET in Replit Secrets.");
+await migrate();
+
+// The cookie-signing secret is generated once and kept in the database,
+// unless SESSION_SECRET is set.
+const SESSION_SECRET =
+  process.env.SESSION_SECRET ||
+  (await getOrCreateSetting("session_secret", () => crypto.randomBytes(32).toString("hex")));
+
+if (!ADMIN_PASSWORD) {
+  console.warn("ADMIN_PASSWORD is not set. Sign-in stays closed until it is added in Secrets.");
 }
 
 const app = express();
@@ -54,9 +61,12 @@ function requireAdmin(req, res, next) {
   res.redirect("/admin/login");
 }
 
-app.get("/admin/login", (req, res) => res.send(v.login()));
+const NO_PASSWORD = "Sign-in is closed. Add ADMIN_PASSWORD in Replit Secrets, then restart.";
+
+app.get("/admin/login", (req, res) => res.send(v.login(ADMIN_PASSWORD ? undefined : NO_PASSWORD)));
 
 app.post("/admin/login", (req, res) => {
+  if (!ADMIN_PASSWORD) return res.status(503).send(v.login(NO_PASSWORD));
   const key = req.ip;
   const now = Date.now();
   const recent = (loginAttempts.get(key) || []).filter((t) => now - t < 15 * 60 * 1000);
@@ -330,5 +340,4 @@ app.use((err, req, res, next) => {
   res.status(500).send(v.errorPage());
 });
 
-await migrate();
 app.listen(PORT, "0.0.0.0", () => console.log(`docshare listening on ${PORT}`));

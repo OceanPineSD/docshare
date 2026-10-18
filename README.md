@@ -28,7 +28,7 @@ Tables are created on first start.
 
 1. Import this repo into Replit.
 2. Add a PostgreSQL database from the Database tool. Replit sets `DATABASE_URL`.
-3. Add `ADMIN_PASSWORD` and `SESSION_SECRET` in Secrets.
+3. Add `ADMIN_PASSWORD` in Secrets. The cookie secret is generated on first start.
 4. Deploy as an Autoscale deployment. The build and run commands are in `.replit`.
 5. Link a custom domain under Deployments, Settings.
 

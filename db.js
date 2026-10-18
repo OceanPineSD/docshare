@@ -57,10 +57,25 @@ create table if not exists page_views (
   primary key (view_id, page)
 );
 
+create table if not exists settings (
+  key text primary key,
+  value text not null
+);
+
 create index if not exists links_document_idx on links(document_id);
 create index if not exists views_link_idx on views(link_id);
 `;
 
 export async function migrate() {
   await pool.query(schema);
+}
+
+// Returns a stored setting, creating it with makeValue() on first use.
+export async function getOrCreateSetting(key, makeValue) {
+  await pool.query("insert into settings (key, value) values ($1, $2) on conflict (key) do nothing", [
+    key,
+    makeValue(),
+  ]);
+  const { rows } = await pool.query("select value from settings where key = $1", [key]);
+  return rows[0].value;
 }
