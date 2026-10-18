@@ -308,7 +308,11 @@ export function home(homeUrl) {
     body: `<main class="gate-main">
   <p class="gate-from">${esc(OWNER)}</p>
   <h1 class="gate-title">Documents are shared by private link</h1>
-  <p class="gate-copy">If you were sent a link, open it directly. Otherwise, visit <a class="on-dark" href="${esc(homeUrl)}">${esc(homeUrl.replace(/^https?:\/\//, ""))}</a>.</p>
+  <p class="gate-copy">If you were sent a link, open it directly.${
+    homeUrl
+      ? ` Otherwise, visit <a class="on-dark" href="${esc(homeUrl)}">${esc(homeUrl.replace(/^https?:\/\//, ""))}</a>.`
+      : ""
+  }</p>
 </main>`,
   });
 }

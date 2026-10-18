@@ -13,7 +13,7 @@ import * as v from "./views.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const HOME_URL = process.env.HOME_URL || "https://tung.digital";
+const HOME_URL = process.env.HOME_URL || "";
 // When set (e.g. docs.tung.digital), every other host redirects here and share links use it.
 const CANONICAL_HOST = (process.env.CANONICAL_HOST || "").trim().toLowerCase();
 const OWNER = process.env.OWNER_NAME || "Tung Nguyen";
@@ -35,8 +35,12 @@ const app = express();
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
 // "/" stays reachable on every host because Replit health checks use it.
+const isPlatformHost = (h) => /(^|\.)(replit\.app|replit\.dev|repl\.co)$|^localhost$|^127\./.test(h);
 app.use((req, res, next) => {
-  if (!CANONICAL_HOST || req.path === "/" || req.hostname === CANONICAL_HOST) return next();
+  if (!CANONICAL_HOST || req.hostname === CANONICAL_HOST) return next();
+  // Health checks arrive on the platform host, so "/" only redirects on custom domains
+  // such as tung.digital.
+  if (req.path === "/" && isPlatformHost(req.hostname)) return next();
   if (req.method !== "GET" && req.method !== "HEAD") return next();
   res.redirect(301, `https://${CANONICAL_HOST}${req.originalUrl}`);
 });
