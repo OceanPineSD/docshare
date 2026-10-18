@@ -42,7 +42,8 @@ app.use((req, res, next) => {
   // such as tung.digital.
   if (req.path === "/" && isPlatformHost(req.hostname)) return next();
   if (req.method !== "GET" && req.method !== "HEAD") return next();
-  res.redirect(301, `https://${CANONICAL_HOST}${req.originalUrl}`);
+  // 302, not 301: browsers cache 301s forever, and tung.digital may get its own site later.
+  res.redirect(302, `https://${CANONICAL_HOST}${req.originalUrl}`);
 });
 app.use(cookieParser(SESSION_SECRET));
 app.use(express.urlencoded({ extended: false }));
