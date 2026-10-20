@@ -2,6 +2,8 @@ const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const OWNER = process.env.OWNER_NAME || "Tung Nguyen";
+// Changes on every deploy so browsers fetch fresh scripts and styles.
+const BUILD = Date.now().toString(36);
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: process.env.TZ_DISPLAY || "America/New_York" }) : "";
@@ -25,7 +27,7 @@ function layout({ title, body, mode = "admin", head = "" }) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=${BUILD}">
 ${head}
 </head>
 <body class="${mode}">
@@ -283,7 +285,7 @@ export function viewer(link, viewId, email) {
   return layout({
     title: link.title,
     mode: link.screen_protect ? "viewer protect" : "viewer",
-    head: `<script type="module" src="/static/viewer.js"></script>`,
+    head: `<script type="module" src="/static/viewer.js?v=${BUILD}"></script>`,
     body: `<header class="viewer-bar">
   <div class="viewer-title"><strong>${esc(link.title)}</strong><span>Shared by ${esc(OWNER)}</span></div>
   ${link.allow_download ? `<a class="viewer-dl" href="${fileUrl}&dl=1">Download PDF</a>` : ""}
