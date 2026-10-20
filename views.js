@@ -289,14 +289,21 @@ export function viewer(link, viewId, email) {
   ${link.allow_download ? `<a class="viewer-dl" href="${fileUrl}&dl=1">Download PDF</a>` : ""}
 </header>
 <main id="stage" class="stage" data-file="${fileUrl}" data-view="${viewId}" data-mark="${esc(mark)}" data-protect="${link.screen_protect ? "1" : ""}" tabindex="-1">
-  <canvas id="page" aria-label="Document page"></canvas>
+  <div id="sheet" class="sheet"><canvas id="page" aria-label="Document page"></canvas></div>
   <p id="status" class="stage-status">Loading document</p>
   <div id="shield" class="shield" hidden><p id="shield-text">Return to this window to keep reading.</p></div>
 </main>
-<nav class="pager" aria-label="Pages">
-  <button id="prev" type="button" aria-label="Previous page">Previous</button>
-  <span id="count" aria-live="polite"></span>
-  <button id="next" type="button" aria-label="Next page">Next</button>
+<nav class="pager" aria-label="Document controls">
+  <div class="pager-group">
+    <button id="prev" type="button" aria-label="Previous page">Previous</button>
+    <span id="count" aria-live="polite"></span>
+    <button id="next" type="button" aria-label="Next page">Next</button>
+  </div>
+  <div class="pager-group zoom-group" role="group" aria-label="Zoom">
+    <button id="zoom-out" type="button" aria-label="Zoom out" disabled>&minus;</button>
+    <button id="zoom-fit" type="button" class="zoom-level">Fit</button>
+    <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+  </div>
 </nav>`,
   });
 }
